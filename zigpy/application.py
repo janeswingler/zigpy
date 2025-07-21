@@ -1426,3 +1426,13 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         """Exit inter-PAN mode. To be implemented by the radio library."""
         LOGGER.debug("Exiting inter-PAN mode")
         raise NotImplementedError()
+
+    @abc.abstractmethod
+    async def set_interpan_channel(self, channel: int) -> None:
+        """Set the channel for inter-PAN communication."""
+        LOGGER.debug("Setting inter-PAN channel to %d", channel)
+
+    @abc.abstractmethod
+    async def send_interpan_packet(selfself, packet: t.ZigbeePacket) -> None:
+        """Send a Zigbee packet in inter-PAN mode."""
+        LOGGER.debug("Sending inter-PAN packet: %r", packet)
