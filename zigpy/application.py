@@ -1397,3 +1397,24 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         )
 
         self.device_initialized(self._device)
+
+    @contextlib.asynccontextmanager
+    async def interpan_mode(self):
+        """Context manager for inter-PAN mode"""
+        try:
+            await self._enter_interpan_mode()
+            yield
+        finally:
+            await self._exit_interpan_mode()
+
+    @abc.abstractmethod
+    async def _enter_interpan_mode(self) -> None:
+        """Enter inter-PAN mode. To be implemented by the radio library."""
+        LOGGER.debug("Entering inter-PAN mode")
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    async def _exit_interpan_mode(self) -> None:
+        """Exit inter-PAN mode. To be implemented by the radio library."""
+        LOGGER.debug("Exiting inter-PAN mode")
+        raise NotImplementedError()
