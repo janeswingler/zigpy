@@ -1182,12 +1182,20 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         self,
         src: zigpy.device.Device | zigpy.listeners.ANY_DEVICE,
         filters: list[zigpy.listeners.MatcherType],
+        *,
+        interpan: bool = False,
+        pan_id: t.PANID | None = None,
+        channel: int | None = None,
+
     ) -> typing.Any:
-        """Context manager to wait for a Zigbee response."""
+        """Context manager to wait for a Zigbee response, with inter-PAN support"""
 
         listener = zigpy.listeners.FutureListener(
             matchers=tuple(filters),
             future=asyncio.get_running_loop().create_future(),
+            interpan=interpan,
+            pan_id=pan_id,
+            channel=channel,
         )
 
         self._req_listeners[src].append(listener)
