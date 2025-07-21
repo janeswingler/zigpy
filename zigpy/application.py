@@ -1193,9 +1193,9 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         listener = zigpy.listeners.FutureListener(
             matchers=tuple(filters),
             future=asyncio.get_running_loop().create_future(),
-            interpan=interpan,
-            pan_id=pan_id,
-            channel=channel,
+            interpan=interpan,  # Ensure inter-PAN flag is passed
+            pan_id=pan_id,      # Pass the PAN ID for inter-PAN responses
+            channel=channel,    # Pass the channel for inter-PAN responses
         )
 
         self._req_listeners[src].append(listener)
