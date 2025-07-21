@@ -623,6 +623,9 @@ class ZigbeePacket(BaseDataclassMixin):
     lqi: basic.uint8_t | None = dataclasses.field(default=None)
     rssi: basic.int8s | None = dataclasses.field(default=None)
 
+    # New fields for inter-PAN communication
+    pan_id: PanId | None = dataclasses.field(default=None) # represents PAN ID for inter-PAN communication
+    channel: basic.uint8_t | None = dataclasses.field(default=None) # represents the zigbee channel (specific frequency band 2.4 GHz ISM band with channels 11-26) for inter-PAN communication
     def __hash__(self) -> int:
         return hash(
             (
@@ -643,6 +646,8 @@ class ZigbeePacket(BaseDataclassMixin):
                 self.lqi,
                 self.rssi,
                 self.priority,
+                self.pan_id, # Added pan-id to hash
+                self.channel, # Added channel to hash
             )
         )
 
