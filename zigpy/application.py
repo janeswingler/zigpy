@@ -87,7 +87,9 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         self._req_listeners: collections.defaultdict[
             zigpy.device.Device,
             collections.deque[zigpy.listeners.BaseRequestListener],
-        ] = collections.defaultdict(lambda: collections.deque([]))
+        ] = collections.defaultdict(lambda: collections.deque([]),)
+        self._interpan_mode_active = False
+        self.interpan_channel: int | None = None
 
     def create_task(
         self, target: Coroutine[Any, Any, _R], name: str | None = None
@@ -1021,6 +1023,11 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         assert packet.src is not None
         assert packet.dst is not None
 
+        # Handle inter-PAN packets
+        if packet.pan_id is not None or self._interpan_mode_active: # I need to figure out if I want a boolean flag
+            self._handle_interpan_packet(packet)
+            return
+
         # Peek into ZDO packets to handle possible ZDO notifications
         if zigpy.zdo.ZDO_ENDPOINT in (packet.src_ep, packet.dst_ep):
             self._maybe_parse_zdo(packet)
@@ -1182,10 +1189,10 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         self,
         src: zigpy.device.Device | zigpy.listeners.ANY_DEVICE,
         filters: list[zigpy.listeners.MatcherType],
-        *,
-        interpan: bool = False,
-        pan_id: t.PANID | None = None,
-        channel: int | None = None,
+        # *,
+        # interpan: bool = False,
+        # pan_id: t.PANID | None = None,
+        # channel: int | None = None,
 
     ) -> typing.Any:
         """Context manager to wait for a Zigbee response, with inter-PAN support"""
@@ -1193,9 +1200,9 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         listener = zigpy.listeners.FutureListener(
             matchers=tuple(filters),
             future=asyncio.get_running_loop().create_future(),
-            interpan=interpan,  # Ensure inter-PAN flag is passed
-            pan_id=pan_id,      # Pass the PAN ID for inter-PAN responses
-            channel=channel,    # Pass the channel for inter-PAN responses
+            # interpan=interpan,  # Ensure inter-PAN flag is passed
+            # pan_id=pan_id,      # Pass the PAN ID for inter-PAN responses
+            # channel=channel,    # Pass the channel for inter-PAN responses
         )
 
         self._req_listeners[src].append(listener)
@@ -1409,30 +1416,44 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
     @contextlib.asynccontextmanager
     async def interpan_mode(self):
         """Context manager for inter-PAN mode"""
+        if self.interpan_mode_active:
+            raise ValueError("Already in inter-PAN mode")
         try:
             await self._enter_interpan_mode()
+            self._interpan_mode_active = True
+            LOGGER.debug("Inter-PAN mode is now active") # Necessary for PR?
             yield
         finally:
+            self._interpan_mode_active = False
+            LOGGER.debug("Exiting inter-PAN mode") # Necessary for PR?
             await self._exit_interpan_mode()
 
     @abc.abstractmethod
     async def _enter_interpan_mode(self) -> None:
         """Enter inter-PAN mode. To be implemented by the radio library."""
-        LOGGER.debug("Entering inter-PAN mode")
+        LOGGER.debug("Entering inter-PAN mode") # Necessary for PR?
         raise NotImplementedError()
 
     @abc.abstractmethod
     async def _exit_interpan_mode(self) -> None:
         """Exit inter-PAN mode. To be implemented by the radio library."""
-        LOGGER.debug("Exiting inter-PAN mode")
+        LOGGER.debug("Exiting inter-PAN mode") # Necessary for PR?
         raise NotImplementedError()
 
     @abc.abstractmethod
     async def set_interpan_channel(self, channel: int) -> None:
         """Set the channel for inter-PAN communication."""
+        if not self._interpan_mode_active:
+            raise ValueError("Not in inter-PAN mode")
         LOGGER.debug("Setting inter-PAN channel to %d", channel)
+        self._interpan_channel = channel
+        raise NotImplementedError()
+
 
     @abc.abstractmethod
-    async def send_interpan_packet(selfself, packet: t.ZigbeePacket) -> None:
+    async def send_interpan_packet(self, packet: t.ZigbeePacket) -> None:
         """Send a Zigbee packet in inter-PAN mode."""
+        if not self._interpan_mode_active:
+            raise ValueError("Not in inter-PAN mode")
         LOGGER.debug("Sending inter-PAN packet: %r", packet)
+        raise NotImplementedError()
