@@ -17,6 +17,8 @@ from typing import Any, TypeVar
 import warnings
 
 from zigpy.backports.contextlib import nullcontext
+# interpan import?
+from bellows.exception import ControllerError, EzspError, StackAlreadyRunning
 
 if sys.version_info[:2] < (3, 11):
     from async_timeout import timeout as asyncio_timeout  # pragma: no cover
@@ -46,6 +48,7 @@ import zigpy.util
 import zigpy.zcl
 import zigpy.zdo
 import zigpy.zdo.types as zdo_types
+from zigpy.touchlink import TouchLinkManager
 
 DEFAULT_ENDPOINT_ID = 1
 LOGGER = logging.getLogger(__name__)
@@ -97,6 +100,10 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         self._packet_priority_var = contextvars.ContextVar(
             "request_priority", default=t.PacketPriority.NORMAL
         )
+
+        # Add 'fields' for inter-PAN state management
+        self._interpan_mode = False
+        self._interpan_listeners: list[zigpy.listeners.FutureListener] = []
 
     def create_task(
         self, target: Coroutine[Any, Any, _R], name: str | None = None
@@ -1053,6 +1060,11 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         """Notify zigpy of a received Zigbee packet."""
 
         LOGGER.debug("Received a packet: %r", packet)
+
+        # Add check for interpan packets
+        if getattr(packet, 'is_interpan', False) or self._interpan_mode:
+            return self._handle_interpan_packet(packet)
+
         assert packet.src is not None
         assert packet.dst is not None
 
@@ -1432,3 +1444,92 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         )
 
         self.device_initialized(self._device)
+
+    @contextlib.asynccontextmanager
+    async def interpan_mode(self):
+        """Contect manager for inter-PAN operations."""
+
+        try:
+            await self._enter_interpan_mode()
+            self._interpan_mode = True
+            yield
+        finally:
+            await self._exit_interpan_mode()
+            self._interpan_mode = False
+            self._interpan_listeners.clear()
+
+    @abc.abstractmethod
+    async def _enter_interpan_mode(self) -> None:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def _exit_interpan_mode(self) -> None:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def set_interpan_channel(self, channel: int) -> None:
+        raise NotImplementedError
+
+    async def send_interpan_packet(self, packet: t.ZigbeePacket) -> None:
+        if not self._interpan_mode:
+            raise RuntimeError("Not in inter-PAN mode")
+
+        packet.is_interpan = True
+        await self.send_packet(packet)
+
+    @contextlib.asynccontextmanager
+    def wait_for_interpan_response(self, filters: list[zigpy.listeners.MatcherType],) -> typing.Any:
+
+        listener = zigpy.listeners.FutureListener(
+            matchers=tuple(filters),
+            future=asyncio.get_running_loop().create_future(),
+        )
+
+        self._interpan_listeners.append(listener)
+
+        try:
+            yield listener.future
+        finally:
+            if listener in self._interpan_listeners:
+                self._interpan_listeners.remove(listener) # cleanup
+
+    def _handle_interpan_packet(self, packet: t.ZigbeePacket) -> None:
+
+        try:
+            hdr, args = self._parse_zcl_packet(packet)
+        except Exception as e:
+            LOGGER.debug("Failed to parse inter-PAN ZCL packet: %s", e)
+            return
+
+        # Notify the inter-PAN listeners
+        for listener in self._interpan_listeners[:]:
+            if listener.resolve(hdr, args):
+                if isinstance(listener, zigpy.listeners.FutureListener):
+                    break  # Only resolve first matching future listener
+    
+    @property  
+    def touchlink(self) -> TouchLinkManager:
+        """TouchLink manager for commissioning operations."""  
+        if not hasattr(self, '_touchlink_manager'):  
+            self._touchlink_manager = TouchLinkManager(self)  
+        return self._touchlink_manager
+
+    def _parse_zcl_packet(self, packet: t.ZigbeePacket) -> tuple[typing.Any, typing.Any]:
+        """Parse ZCL packet data into header and command."""
+        from zigpy.zcl import foundation
+        from zigpy.zcl.clusters.lightlink import LightLink
+        
+        try:
+            # For TouchLink inter-PAN packets, use the LightLink cluster
+            if packet.is_interpan and packet.cluster_id == LightLink.cluster_id:
+                cluster = LightLink(None)
+                hdr, args = cluster.deserialize(packet.data.serialize())
+                return hdr, args
+            else:
+                # Fallback to basic ZCL parsing
+                hdr, remaining = foundation.ZCLHeader.deserialize(packet.data.serialize())
+                # For now, return the remaining data as args
+                return hdr, remaining
+        except Exception as e:
+            LOGGER.debug("Failed to parse ZCL packet: %s", e)
+            raise
