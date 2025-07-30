@@ -25,20 +25,20 @@ TOUCHLINK_FACTORY_RESET_TIMEOUT = 3.0
 class TouchLinkDevice:
     """Represents a discovered TouchLink device."""
 
-    def __init__(self, response_data: dict[str, Any]):
-        self.transaction_id = response_data["inter_pan_transaction_id"]
-        self.rssi_correction = response_data["rssi_correction"]
-        self.zigbee_info = response_data["zigbee_info"]
-        self.touchlink_info = response_data["touchlink_info"]
-        self.key_bitmask = response_data["key_bitmask"]
-        self.response_id = response_data["response_id"]
-        self.epid = response_data["epid"]
-        self.nwk_update_id = response_data["nwk_update_id"]
-        self.logical_channel = response_data["logical_channel"]
-        self.pan_id = response_data["pan_id"]
-        self.nwk_addr = response_data["nwk_addr"]
-        self.num_sub_devices = response_data["num_sub_devices"]
-        self.total_group_ids = response_data["total_group_ids"]
+    def __init__(self, response_data):
+        self.transaction_id = response_data.inter_pan_transaction_id
+        self.rssi_correction = response_data.rssi_correction
+        self.zigbee_info = response_data.zigbee_info
+        self.touchlink_info = response_data.touchlink_info
+        self.key_bitmask = response_data.key_bitmask
+        self.response_id = response_data.response_id
+        self.epid = response_data.epid
+        self.nwk_update_id = response_data.nwk_update_id
+        self.logical_channel = response_data.logical_channel
+        self.pan_id = response_data.pan_id
+        self.nwk_addr = response_data.nwk_addr
+        self.num_sub_devices = response_data.num_sub_devices
+        self.total_group_ids = response_data.total_group_ids
 
     @property
     def is_factory_new(self) -> bool:  
@@ -100,7 +100,7 @@ class TouchLinkManager:
                 break
 
             # Create a NEW response waiter for each attempt
-            with self._app.wait_for_interpan_response([]) as response_future:
+            async with self._app.wait_for_interpan_response([]) as response_future:
                 try:
                     hdr, args = await asyncio.wait_for(
                         response_future,
@@ -108,8 +108,10 @@ class TouchLinkManager:
                     )
 
                     # Verify this is a scan response with our transaction ID
-                    if (hasattr(args, 'inter_pan_transaction_id') and
+                    if (hdr.command_id == LightLink.ClientCommandDefs.scan_rsp.id and  # ✅ Check correct command ID
+                        hasattr(args, 'inter_pan_transaction_id') and
                         args.inter_pan_transaction_id == transaction_id):
+
                         device = TouchLinkDevice(args)
                         discovered_devices.append(device)
                         LOGGER.debug("Found TouchLink device: %r", device)
@@ -140,6 +142,7 @@ class TouchLinkManager:
         )
 
         zigbee_info = ZigbeeInformation(
+            logical_type=0,  # Coordinator?
             rx_on_when_idle=1,
             reserved=0
         )
@@ -147,10 +150,11 @@ class TouchLinkManager:
         touchlink_info = ScanRequestInformation(
             factory_new=1,
             address_assignment=1, 
-            link_initiator=1,
-            touch_link_priority_request=1,
+            reserved1=0,
+            touchlink_initiator=1,
+            undefined=0,
+            reserved2=0,
             profile_interop=1,
-            reserved=0
         )
 
         scan_cmd = LightLink.ServerCommandDefs.scan.schema(
@@ -222,11 +226,11 @@ class TouchLinkManager:
                 reserved=0,
             ),  
             tsn=secrets.randbits(8),
-            command_id=LightLink.ClientCommandDefs.reset_to_factory_new.id,  
+            command_id=LightLink.ServerCommandDefs.reset_to_factory_new.id,  
         )
 
         # Create factory reset command
-        reset_cmd = LightLink.ClientCommandDefs.reset_to_factory_new.schema(  
+        reset_cmd = LightLink.ServerCommandDefs.reset_to_factory_new.schema(  
             inter_pan_transaction_id=transaction_id,
         )
 

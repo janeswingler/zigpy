@@ -1478,7 +1478,7 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         await self.send_packet(packet)
 
     @contextlib.asynccontextmanager
-    def wait_for_interpan_response(self, filters: list[zigpy.listeners.MatcherType],) -> typing.Any:
+    async def wait_for_interpan_response(self, filters: list[zigpy.listeners.MatcherType],) -> typing.Any:
 
         listener = zigpy.listeners.FutureListener(
             matchers=tuple(filters),
@@ -1493,25 +1493,39 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
             if listener in self._interpan_listeners:
                 self._interpan_listeners.remove(listener) # cleanup
 
+
     def _handle_interpan_packet(self, packet: t.ZigbeePacket) -> None:
+        """Handle received inter-PAN packet."""
+        LOGGER.info("📦 RAW INTER-PAN PACKET RECEIVED!")
+        LOGGER.info("📦 Packet type: %r", type(packet))
+        LOGGER.info("📦 Packet data: %r", packet)
+        LOGGER.info("📦 Packet hex: %s", packet.data.hex() if hasattr(packet.data, 'hex') else 'No hex data')
 
         try:
             hdr, args = self._parse_zcl_packet(packet)
+            LOGGER.info("📦 Parsed ZCL header: %r", hdr)
+            LOGGER.info("📦 Parsed ZCL args: %r", args)
         except Exception as e:
             LOGGER.debug("Failed to parse inter-PAN ZCL packet: %s", e)
             return
 
         # Notify the inter-PAN listeners
         for listener in self._interpan_listeners[:]:
-            if listener.resolve(hdr, args):
-                if isinstance(listener, zigpy.listeners.FutureListener):
-                    break  # Only resolve first matching future listener
-    
-    @property  
+            try:
+                if listener.resolve(hdr, args):
+                    if isinstance(listener, zigpy.listeners.FutureListener):
+                        break  # Only resolve first matching future listener
+            except Exception as e:
+                LOGGER.error("Inter-PAN listener error: %s", e)
+                import traceback
+                traceback.print_exc()
+
+
+    @property
     def touchlink(self) -> TouchLinkManager:
-        """TouchLink manager for commissioning operations."""  
-        if not hasattr(self, '_touchlink_manager'):  
-            self._touchlink_manager = TouchLinkManager(self)  
+        """TouchLink manager for commissioning operations."""
+        if not hasattr(self, '_touchlink_manager'):
+            self._touchlink_manager = TouchLinkManager(self)
         return self._touchlink_manager
 
     def _parse_zcl_packet(self, packet: t.ZigbeePacket) -> tuple[typing.Any, typing.Any]:
