@@ -1063,6 +1063,9 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
     def packet_received(self, packet: t.ZigbeePacket) -> None:
         """Notify zigpy of a received Zigbee packet."""
 
+        # Notify registered packet callbacks before processing
+        self.notify_packet_callbacks(packet)
+
         LOGGER.debug("Received a packet: %r", packet)
         assert packet.src is not None
         assert packet.dst is not None
