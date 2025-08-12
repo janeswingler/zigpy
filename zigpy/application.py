@@ -1063,9 +1063,13 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
     def packet_received(self, packet: t.ZigbeePacket) -> None:
         """Notify zigpy of a received Zigbee packet."""
 
+
         LOGGER.debug("Received a packet: %r", packet)
         assert packet.src is not None
         assert packet.dst is not None
+
+        # Notify registered packet callbacks immediately upon packet reception
+        self.notify_packet_callbacks(packet)
 
         # Peek into ZDO packets to handle possible ZDO notifications
         if zigpy.zdo.ZDO_ENDPOINT in (packet.src_ep, packet.dst_ep):
