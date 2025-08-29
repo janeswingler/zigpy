@@ -623,6 +623,10 @@ class ZigbeePacket(BaseDataclassMixin):
     lqi: basic.uint8_t | None = dataclasses.field(default=None)
     rssi: basic.int8s | None = dataclasses.field(default=None)
 
+    # Fields for interpan
+    pan_id: PanId | None = dataclasses.field(default=None)
+    channel: basic.uint8_t | None = dataclasses.field(default=None)
+
     def __hash__(self) -> int:
         return hash(
             (

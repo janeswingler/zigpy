@@ -1516,3 +1516,28 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         )
 
         self.device_initialized(self._device)
+
+    @contextlib.asynccontextmanager
+    async def _enter_interpan_mode(self):
+        """Switch radio to ineter-PAN mode"""
+        await self._enter_interpan_mode()
+        try:
+            yield
+        finally:
+            await self._exit_interpan_mode()
+    
+    @abc.abstractmethod
+    async def _enter_interpan_mode(self):
+        raise NotImplementedError # pragma: no cover
+    
+    @abc.abstractmethod
+    async def _exit_interpan_mode(self):
+        raise NotImplementedError # pragma: no cover
+
+    @abc.abstractmethod
+    async def set_interpan_channel(self, channel: int):
+        raise NotImplementedError # pragma: no cover
+
+    @abc.abstractmethod
+    async def send_interpan_packet(ZigbeePacket):
+        raise NotImplementedError # pragma: no cover
