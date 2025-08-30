@@ -1,8 +1,8 @@
 
+import logging
 from typing import Type, Optional, Dict, Any
-from zigpy.zcl import foundation, Cluster, ClusterType
-from zigpy.zcl.clusters import CLUSTERS
-
+from zigpy.zcl import foundation, clusters
+LOGGER = logging.getLogger(__name__)
 
 
 # We have to figure out where to parse the ZigbeePacket given to register_packet_callback()
@@ -21,36 +21,41 @@ def parse_zcl_frame(data: bytes, cluster_id: Optional[int] = None) -> Dict[str, 
         frame_control = zcl_hdr.frame_control
 
         # Look up cluster definition if provided
-        cluster = get_cluster_class(cluster_id) if cluster_id else None
+        cluster_class = get_cluster_class(cluster_id) if cluster_id else None
         command_def = None
         payload = None
 
-        if cluster:
-            command_def = (
-                cluster.server_commands.get(command_id) or
-                cluster.client_commands.get(command_id)
-            )
+        if cluster_class:
+            if frame_control.direction == foundation.Direction.Client_to_Server:
+                command_def = cluster_class.server_commands.get(command_id)
+            else:
+                command_def = cluster_class.client_commands.get(command_id)
+                
 
             # Parse payload using command_def if available
             if command_def:
                 try:
-                    payload, _ = command_def.schema.deserialize(remaining_data)
-                except Exception:
-                    payload = remaining_data
+                    parsed_payload, _ = command_def.schema.deserialize(remaining_data)
+                except Exception as e:
+                    LOGGER.debug("Failed to parse command payload: %s", e)
+                    parsed_payload = remaining_data
             else:
-                payload = remaining_data
+                parsed_payload = remaining_data
         else:
-            payload = remaining_data
+            parsed_payload = remaining_data
 
         return {
             "frame_control": frame_control,
-            "sequence": zcl_hdr.tsn,
+            "tsn": zcl_hdr.tsn,
             "command_id": command_id,
-            "payload": payload,
+            "command_def": command_def,
+            "payload": parsed_payload,
             "cluster_id": cluster_id,
+            "manufacturer": zcl_hdr.manufacturer,
         }
         
     except Exception as e:
+        LOGGER.exception("Error parsing ZCL frame")
         return {
             "error": str(e),
             "raw_data": data
@@ -59,7 +64,7 @@ def parse_zcl_frame(data: bytes, cluster_id: Optional[int] = None) -> Dict[str, 
 
 def get_cluster_class(cluster_id: int) -> Optional[type]:
     """Return the cluster class for a given cluster_id, or None if not found."""
-    return CLUSTERS.get(cluster_id)
+    return clusters.CLUSTERS_BY_ID.get(cluster_id)
 
 
 def test_parse_zcl_frame():
@@ -79,7 +84,7 @@ def test_parse_zcl_frame():
     result = parse_zcl_frame(frame, cluster_id=cluster_id)
     print("Parsed ZCL frame:", result)
     assert result["frame_control"] == 0x01
-    assert result["sequence"] == 0x42
+    assert result["tsn"] == 0x42
     assert result["command_id"] == 0x05
     assert result["payload"] == payload_bytes or isinstance(result["payload"], bytes)
     print("ZCL frame test passed!")

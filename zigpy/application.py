@@ -1066,6 +1066,9 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         assert packet.src is not None
         assert packet.dst is not None
 
+        # Integration point
+        self.notify_packet_callbacks(packet)
+
         # Peek into ZDO packets to handle possible ZDO notifications
         if zigpy.zdo.ZDO_ENDPOINT in (packet.src_ep, packet.dst_ep):
             self._maybe_parse_zdo(packet)
@@ -1223,6 +1226,7 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
             """Remove the callback."""
             with contextlib.suppress(ValueError):
                 self._packet_callbacks[filter].remove(callback)
+            # Clean up empty list?
 
         return cancel_callback
 
@@ -1518,7 +1522,7 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         self.device_initialized(self._device)
 
     @contextlib.asynccontextmanager
-    async def _enter_interpan_mode(self):
+    async def interpan_mode(self):
         """Switch radio to ineter-PAN mode"""
         await self._enter_interpan_mode()
         try:
@@ -1539,5 +1543,6 @@ class ControllerApplication(zigpy.util.ListenableMixin, abc.ABC):
         raise NotImplementedError # pragma: no cover
 
     @abc.abstractmethod
-    async def send_interpan_packet(ZigbeePacket):
+    async def send_interpan_packet(self, packet: t.ZigbeePacket):
+        """Send a prepared inter-PAN ZigbeePacket (packet.is_interpan should be True)."""
         raise NotImplementedError # pragma: no cover

@@ -626,6 +626,7 @@ class ZigbeePacket(BaseDataclassMixin):
     # Fields for interpan
     pan_id: PanId | None = dataclasses.field(default=None)
     channel: basic.uint8_t | None = dataclasses.field(default=None)
+    is_interpan: bool = dataclasses.field(default=False)
 
     def __hash__(self) -> int:
         return hash(
